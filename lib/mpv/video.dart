@@ -26,6 +26,7 @@ class Video extends StatefulWidget {
   final Widget Function(BuildContext context)? controls;
   final Color backgroundColor;
   final ValueListenable<bool>? hasFirstFrame;
+  final EdgeInsets surfacePadding;
 
   const Video({
     super.key,
@@ -33,6 +34,7 @@ class Video extends StatefulWidget {
     this.controls,
     this.backgroundColor = Colors.black,
     this.hasFirstFrame,
+    this.surfacePadding = EdgeInsets.zero,
   });
 
   @override
@@ -113,7 +115,10 @@ class _VideoState extends State<Video> {
         fit: StackFit.expand,
         children: [
           // Video rendering area
-          _buildVideoSurface(),
+          Padding(
+            padding: widget.surfacePadding,
+            child: _buildVideoSurface(),
+          ),
 
           // Controls overlay
           if (widget.controls != null) widget.controls!(context),

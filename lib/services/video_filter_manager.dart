@@ -98,6 +98,10 @@ class VideoFilterManager {
   /// applied to the native player with [applyManualInsetsToPlayer].
   final ValueNotifier<EdgeInsets?> manualInsetsNotifier = ValueNotifier<EdgeInsets?>(null);
 
+  /// Zoom value that was active before the user entered manual bounds editing.
+  /// Restored when manual bounds are cleared so reset can fully undo the edit.
+  double? _manualEditPreviousZoomScale;
+
   /// Vertical pan offset in logical pixels. Positive = shift content down,
   /// negative = shift content up. Allows positioning video at top/center/bottom
   /// within the detected boundaries.
@@ -420,6 +424,9 @@ class VideoFilterManager {
 
   /// Set manual insets (logical pixels). Passing null clears manual mode.
   void setManualInsets(EdgeInsets? insets) {
+    if (insets != null && manualInsetsNotifier.value == null) {
+      _manualEditPreviousZoomScale = _zoomScale;
+    }
     manualInsetsNotifier.value = insets;
     // When editing, reflect in the visible overlay immediately.
     if (insets != null) {
@@ -434,6 +441,11 @@ class VideoFilterManager {
         contentRectNotifier.value = rect;
       }
     } else {
+      if (_manualEditPreviousZoomScale != null && (_zoomScale - _manualEditPreviousZoomScale!).abs() > 0.0001) {
+        _zoomScale = normalizeZoomScale(_manualEditPreviousZoomScale!);
+        updateVideoFilter();
+      }
+      _manualEditPreviousZoomScale = null;
       // Recompute from actual video params on clear
       unawaited(_updateContentRect());
     }
@@ -447,43 +459,26 @@ class VideoFilterManager {
   }
 
   /// Apply the currently-set manual insets to the player as a best-effort
-  /// physical change. This adjusts the zoom scale to match the manual width
-  /// relative to the currently-displayed size. Vertical positioning is not
-  /// precisely mapped here because platforms differ in pan semantics; we
-  /// leave that to more targeted UI controls later.
+  /// physical change. The manual bounds define the projection frame; we keep
+  /// the video un-cropped and let the surrounding overlay/bounds represent the
+  /// target area.
   Future<void> applyManualInsetsToPlayer() async {
     final insets = manualInsetsNotifier.value;
     final playerSize = _playerSize;
     if (insets == null || playerSize == null) return;
 
     try {
-      // Recompute the current displayed video rect (as _updateContentRect does)
-      final wStr = await player.getProperty('video-params/w');
-      final hStr = await player.getProperty('video-params/h');
-      if (wStr == null || hStr == null) return;
-      final vw = int.tryParse(wStr);
-      final vh = int.tryParse(hStr);
-      if (vw == null || vh == null || vh == 0) return;
-      final videoAspect = vw / vh;
-      final playerAspect = playerSize.width / playerSize.height;
-
-      double currentDisplayedW;
-      if (_boxFitMode == 0) {
-        if (playerAspect > videoAspect) {
-          final dispH = playerSize.height;
-          currentDisplayedW = dispH * videoAspect;
-        } else {
-          currentDisplayedW = playerSize.width;
-        }
-      } else {
-        currentDisplayedW = playerSize.width;
-      }
-
-      final targetDisplayedW = (playerSize.width - insets.left - insets.right).clamp(1.0, playerSize.width);
-      final scale = (targetDisplayedW / currentDisplayedW);
-      final newZoom = (_zoomScale * scale).clamp(minZoomScale, maxZoomScale);
-      setZoomScale(newZoom);
-      // Request a video filter update so mpv properties are written.
+      // Commit the manual projection bounds as the active overlay geometry.
+      // This intentionally does not zoom the video; it just makes the chosen
+      // rectangle the authoritative "screen area" for the rest of the UI.
+      final rect = Rect.fromLTWH(
+        insets.left.clamp(0.0, playerSize.width),
+        insets.top.clamp(0.0, playerSize.height),
+        (playerSize.width - insets.left - insets.right).clamp(0.0, playerSize.width),
+        (playerSize.height - insets.top - insets.bottom).clamp(0.0, playerSize.height),
+      );
+      contentRectNotifier.value = rect;
+      blackBarInsetsNotifier.value = EdgeInsets.fromLTRB(rect.left, rect.top, playerSize.width - rect.right, playerSize.height - rect.bottom);
       await updateVideoFilter();
     } catch (e) {
       appLogger.w('Failed to apply manual insets to player', error: e);
