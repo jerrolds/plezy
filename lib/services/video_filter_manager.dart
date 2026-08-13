@@ -1,4 +1,5 @@
 import 'dart:math' as math;
+import 'dart:async' show unawaited;
 
 import 'package:flutter/material.dart';
 import 'package:rate_limiter/rate_limiter.dart';
@@ -81,6 +82,26 @@ class VideoFilterManager {
   final Map<String, String> _appliedProps = {};
   int? _appliedBoxFitMode;
   double? _appliedVideoZoom;
+
+  /// Current video content rect within the player (in logical pixels).
+  /// When null the content area is unknown; otherwise it describes the
+  /// area the decoded video occupies inside the player viewport.
+  final ValueNotifier<Rect?> contentRectNotifier = ValueNotifier<Rect?>(null);
+
+  /// Insets (in logical pixels) representing black bars around the content
+  /// area: left, top, right, bottom. Zero insets mean the content fills the
+  /// player viewport.
+  final ValueNotifier<EdgeInsets> blackBarInsetsNotifier = ValueNotifier<EdgeInsets>(EdgeInsets.zero);
+
+  /// Optional manual insets set by the user via the overlay editor. When
+  /// non-null these insets take precedence for the overlay and can be
+  /// applied to the native player with [applyManualInsetsToPlayer].
+  final ValueNotifier<EdgeInsets?> manualInsetsNotifier = ValueNotifier<EdgeInsets?>(null);
+
+  /// Vertical pan offset in logical pixels. Positive = shift content down,
+  /// negative = shift content up. Allows positioning video at top/center/bottom
+  /// within the detected boundaries.
+  final ValueNotifier<double> verticalPanOffsetNotifier = ValueNotifier<double>(0.0);
 
   /// In-progress update loop; concurrent callers mark it dirty and share it.
   Future<void>? _updateLoop;
@@ -276,8 +297,196 @@ class VideoFilterManager {
       await _applyProperty('sub-ass-force-margins', coverMode || zoomScale > 1.0001 ? 'yes' : 'no');
       await _applyProperty('panscan', coverMode ? '1.0' : '0');
       await _applyProperty('video-zoom', nativeVideoZoom ? '0.0' : videoZoomPropertyForScale(zoomScale).toString());
+
+      // Update computed content rect and black bar insets for consumers
+      await _updateContentRect();
     } catch (e) {
       appLogger.w('Failed to update video filter', error: e);
+    }
+  }
+
+  Future<void> _updateContentRect() async {
+    final playerSize = _playerSize;
+    if (playerSize == null || playerSize.width <= 0 || playerSize.height <= 0) return;
+
+    try {
+      final wStr = await player.getProperty('video-params/w');
+      final hStr = await player.getProperty('video-params/h');
+      if (wStr == null || hStr == null) {
+        // Unknown video size — assume content fills viewport
+        _setContentRect(Rect.fromLTWH(0, 0, playerSize.width, playerSize.height));
+        return;
+      }
+
+      final vw = int.tryParse(wStr);
+      final vh = int.tryParse(hStr);
+      if (vw == null || vh == null || vh == 0) {
+        _setContentRect(Rect.fromLTWH(0, 0, playerSize.width, playerSize.height));
+        return;
+      }
+
+      final videoAspect = vw / vh;
+      final playerAspect = playerSize.width / playerSize.height;
+
+      double dispW, dispH, left, top;
+
+      // Compute displayed video rectangle according to BoxFit mode.
+      if (_boxFitMode == 0) {
+        // Contain (letterbox / pillarbox) — video fits entirely inside viewport
+        if (playerAspect > videoAspect) {
+          dispH = playerSize.height;
+          dispW = dispH * videoAspect;
+          left = (playerSize.width - dispW) / 2.0;
+          top = 0.0;
+        } else {
+          dispW = playerSize.width;
+          dispH = dispW / videoAspect;
+          left = 0.0;
+          top = (playerSize.height - dispH) / 2.0;
+        }
+      } else if (_boxFitMode == 1) {
+        // Cover (crop to fill) — the visible area is the full viewport but the
+        // source may be cropped; report the viewport as content rect to avoid
+        // suggesting black bars where none exist.
+        left = 0.0;
+        top = 0.0;
+        dispW = playerSize.width;
+        dispH = playerSize.height;
+      } else {
+        // Fill/stretch — content occupies the full viewport
+        left = 0.0;
+        top = 0.0;
+        dispW = playerSize.width;
+        dispH = playerSize.height;
+      }
+
+      final rect = Rect.fromLTWH(left.clamp(0.0, playerSize.width), top.clamp(0.0, playerSize.height),
+          dispW.clamp(0.0, playerSize.width), dispH.clamp(0.0, playerSize.height));
+      _setContentRect(rect);
+    } catch (e) {
+      appLogger.w('Failed to update content rect', error: e);
+    }
+  }
+
+  void _setContentRect(Rect rect) {
+    contentRectNotifier.value = rect;
+    final playerSize = _playerSize!;
+    final left = rect.left;
+    final top = rect.top;
+    final right = (playerSize.width - (rect.left + rect.width)).clamp(0.0, playerSize.width);
+    final bottom = (playerSize.height - (rect.top + rect.height)).clamp(0.0, playerSize.height);
+    blackBarInsetsNotifier.value = EdgeInsets.fromLTRB(left, top, right, bottom);
+  }
+
+  /// Recompute content rect and apply vertical pan offset.
+  void _updateContentRectWithPan() {
+    final manualInsets = manualInsetsNotifier.value;
+    final playerSize = _playerSize;
+    if (playerSize == null) return;
+
+    EdgeInsets insets;
+    if (manualInsets != null) {
+      insets = manualInsets;
+    } else {
+      insets = blackBarInsetsNotifier.value;
+    }
+
+    // Compute the content rect from insets
+    final rect = Rect.fromLTWH(
+      insets.left.clamp(0.0, playerSize.width),
+      insets.top.clamp(0.0, playerSize.height),
+      (playerSize.width - insets.left - insets.right).clamp(0.0, playerSize.width),
+      (playerSize.height - insets.top - insets.bottom).clamp(0.0, playerSize.height),
+    );
+
+    // Apply vertical pan offset
+    final panOffset = verticalPanOffsetNotifier.value;
+    final panRect = rect.translate(0, panOffset);
+    // Clamp to player bounds
+    final clampedRect = Rect.fromLTWH(
+      panRect.left.clamp(0.0, playerSize.width),
+      panRect.top.clamp(0.0, playerSize.height),
+      rect.width,
+      rect.height,
+    );
+
+    contentRectNotifier.value = clampedRect;
+    final l = clampedRect.left;
+    final t = clampedRect.top;
+    final r = (playerSize.width - (clampedRect.left + clampedRect.width)).clamp(0.0, playerSize.width);
+    final b = (playerSize.height - (clampedRect.top + clampedRect.height)).clamp(0.0, playerSize.height);
+    blackBarInsetsNotifier.value = EdgeInsets.fromLTRB(l, t, r, b);
+  }
+
+  /// Set manual insets (logical pixels). Passing null clears manual mode.
+  void setManualInsets(EdgeInsets? insets) {
+    manualInsetsNotifier.value = insets;
+    // When editing, reflect in the visible overlay immediately.
+    if (insets != null) {
+      final playerSize = _playerSize;
+      if (playerSize != null) {
+        final rect = Rect.fromLTWH(
+          insets.left.clamp(0.0, playerSize.width),
+          insets.top.clamp(0.0, playerSize.height),
+          (playerSize.width - insets.left - insets.right).clamp(0.0, playerSize.width),
+          (playerSize.height - insets.top - insets.bottom).clamp(0.0, playerSize.height),
+        );
+        contentRectNotifier.value = rect;
+      }
+    } else {
+      // Recompute from actual video params on clear
+      unawaited(_updateContentRect());
+    }
+  }
+
+  /// Set vertical pan offset (logical pixels). Pass 0 to center.
+  void setVerticalPanOffset(double offsetPx) {
+    verticalPanOffsetNotifier.value = offsetPx.clamp(-500.0, 500.0);
+    // Reflect in content rect immediately
+    _updateContentRectWithPan();
+  }
+
+  /// Apply the currently-set manual insets to the player as a best-effort
+  /// physical change. This adjusts the zoom scale to match the manual width
+  /// relative to the currently-displayed size. Vertical positioning is not
+  /// precisely mapped here because platforms differ in pan semantics; we
+  /// leave that to more targeted UI controls later.
+  Future<void> applyManualInsetsToPlayer() async {
+    final insets = manualInsetsNotifier.value;
+    final playerSize = _playerSize;
+    if (insets == null || playerSize == null) return;
+
+    try {
+      // Recompute the current displayed video rect (as _updateContentRect does)
+      final wStr = await player.getProperty('video-params/w');
+      final hStr = await player.getProperty('video-params/h');
+      if (wStr == null || hStr == null) return;
+      final vw = int.tryParse(wStr);
+      final vh = int.tryParse(hStr);
+      if (vw == null || vh == null || vh == 0) return;
+      final videoAspect = vw / vh;
+      final playerAspect = playerSize.width / playerSize.height;
+
+      double currentDisplayedW;
+      if (_boxFitMode == 0) {
+        if (playerAspect > videoAspect) {
+          final dispH = playerSize.height;
+          currentDisplayedW = dispH * videoAspect;
+        } else {
+          currentDisplayedW = playerSize.width;
+        }
+      } else {
+        currentDisplayedW = playerSize.width;
+      }
+
+      final targetDisplayedW = (playerSize.width - insets.left - insets.right).clamp(1.0, playerSize.width);
+      final scale = (targetDisplayedW / currentDisplayedW);
+      final newZoom = (_zoomScale * scale).clamp(minZoomScale, maxZoomScale);
+      setZoomScale(newZoom);
+      // Request a video filter update so mpv properties are written.
+      await updateVideoFilter();
+    } catch (e) {
+      appLogger.w('Failed to apply manual insets to player', error: e);
     }
   }
 
@@ -296,5 +505,9 @@ class VideoFilterManager {
 
   void dispose() {
     _debouncedUpdateVideoFilter.cancel();
+    contentRectNotifier.dispose();
+    blackBarInsetsNotifier.dispose();
+    manualInsetsNotifier.dispose();
+    verticalPanOffsetNotifier.dispose();
   }
 }

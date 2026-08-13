@@ -261,10 +261,13 @@ extension _VideoPlayerBuildMethods on VideoPlayerScreenState {
                     final sourceSubtitleSidecars = _sourceSubtitleSidecarsForControls();
                     final sourceSubtitleTracks = _sourceSubtitleTracksForControls();
 
-                    return Video(
-                      player: player!,
-                      hasFirstFrame: _hasFirstFrame,
-                      controls: (context) => PlexVideoControls(
+                    return Stack(
+                      fit: StackFit.passthrough,
+                      children: [
+                        Video(
+                          player: player!,
+                          hasFirstFrame: _hasFirstFrame,
+                          controls: (context) => PlexVideoControls(
                         player: player!,
                         volumeController: _volumeController!,
                         metadata: _currentMetadata,
@@ -327,6 +330,31 @@ extension _VideoPlayerBuildMethods on VideoPlayerScreenState {
                             : null,
                         toastController: _toastController,
                       ),
+                        ),
+                        // Boundary overlay visualizing detected black bars and content bounds
+                        if (_videoFilterManager != null && _showBoundaryOverlay)
+                          BoundaryOverlay(manager: _videoFilterManager!),
+
+                        // Small toggle button to show/hide overlay
+                        if (_videoFilterManager != null)
+                          Positioned(
+                            top: 12,
+                            right: 12,
+                            child: GestureDetector(
+                              onTap: () {
+                                setState(() => _showBoundaryOverlay = !_showBoundaryOverlay);
+                              },
+                              child: Container(
+                                padding: const EdgeInsets.all(8),
+                                decoration: BoxDecoration(color: Colors.black54, borderRadius: BorderRadius.circular(6)),
+                                child: Text(
+                                  _showBoundaryOverlay ? 'Hide Bounds' : 'Show Bounds',
+                                  style: const TextStyle(color: Colors.white, fontSize: 12),
+                                ),
+                              ),
+                            ),
+                          ),
+                      ],
                     );
                   },
                 ),

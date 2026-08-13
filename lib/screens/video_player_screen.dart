@@ -96,6 +96,7 @@ import 'video_player/live_tv_session_args.dart';
 import 'video_player/live_tv_session_state.dart';
 import 'video_player/tv_background_suspend_policy.dart';
 import 'video_player/widgets/player_prompt_overlays.dart';
+import 'video_player/widgets/boundary_overlay.dart';
 import '../widgets/overlay_sheet.dart';
 import '../widgets/video_controls/player_chrome_controller.dart';
 import '../widgets/video_controls/video_controls.dart';
@@ -670,6 +671,7 @@ class VideoPlayerScreenState extends State<VideoPlayerScreen> with WidgetsBindin
   PlaybackProgressTracker? _progressTracker;
   VideoFilterManager? _videoFilterManager;
   bool _pipInitialized = false;
+  bool _showBoundaryOverlay = false;
   ShaderService? _shaderService;
   AmbientLightingService? _ambientLightingService;
   bool _fullscreenListenerAttached = false;
