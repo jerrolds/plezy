@@ -868,6 +868,12 @@ class TrackSelectionService {
     return languageMatches(language, 'ja') || languageMatches(language, 'jpn') || languageMatches(language, 'japanese');
   }
 
+  bool _isEnglishAudio(AudioTrack? track) {
+    final language = track?.language;
+    if (language == null || language.isEmpty) return false;
+    return languageMatches(language, 'en') || languageMatches(language, 'eng') || languageMatches(language, 'english');
+  }
+
   SubtitleTrack? _findEnglishSubtitle(List<SubtitleTrack> availableTracks, {required bool forcedOnly}) {
     SubtitleTrack? fallback;
     for (final track in availableTracks) {
@@ -884,16 +890,23 @@ class TrackSelectionService {
     List<SubtitleTrack> availableTracks,
     AudioTrack? selectedAudioTrack,
   ) {
+    if (animeMode && _isJapaneseAudio(selectedAudioTrack)) {
+      final englishSubtitle = _findEnglishSubtitle(availableTracks, forcedOnly: false);
+      if (englishSubtitle != null) {
+        return TrackSelectionResult(englishSubtitle, TrackSelectionPriority.profile);
+      }
+    }
+
+    if (!animeMode && _isEnglishAudio(selectedAudioTrack)) {
+      final englishSubtitle = _findEnglishSubtitle(availableTracks, forcedOnly: false);
+      if (englishSubtitle != null) {
+        return TrackSelectionResult(englishSubtitle, TrackSelectionPriority.profile);
+      }
+    }
+
     final profile = profileSettings;
     final mode = profile?.subtitleMode;
     if (profile == null || mode == null || mode == SubtitlePlaybackMode.defaultMode) return null;
-
-    if (animeMode && _isJapaneseAudio(selectedAudioTrack)) {
-      final englishForced = _findEnglishSubtitle(availableTracks, forcedOnly: true);
-      if (englishForced != null) {
-        return TrackSelectionResult(englishForced, TrackSelectionPriority.profile);
-      }
-    }
 
     SubtitleTrack? selected;
     switch (mode) {

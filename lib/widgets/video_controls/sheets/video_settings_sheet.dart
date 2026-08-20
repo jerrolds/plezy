@@ -39,7 +39,17 @@ import '../../../i18n/strings.g.dart';
 import 'base_video_control_sheet.dart';
 import 'version_quality_sheet.dart';
 
-enum _SettingsView { menu, speed, zoom, versionQuality, sleep, audioDevice, shader, dvConversion, hdrToneMapping }
+enum _SettingsView {
+  menu,
+  speed,
+  zoom,
+  versionQuality,
+  sleep,
+  audioDevice,
+  shader,
+  dvConversion,
+  hdrToneMapping,
+}
 
 class _SettingsMenuItem extends StatelessWidget {
   final IconData icon;
@@ -755,6 +765,27 @@ class _VideoSettingsSheetState extends State<VideoSettingsSheet> {
           valueText: formatSyncOffset(_subtitleSyncOffset.toDouble()),
           isHighlighted: _subtitleSyncOffset != 0,
           onTap: () => _openSyncBar(isSubtitle: true),
+        ),
+
+        FocusableListTile(
+          leading: AppIcon(
+            Symbols.subtitles_rounded,
+            fill: 1,
+            color: _state.englishSubtitlesEnabled ? Colors.amber : tokens(context).textMuted,
+          ),
+          title: const Text('Continuous Subtitles'),
+          trailing: Switch(
+            value: _state.englishSubtitlesEnabled,
+            onChanged: (_) {
+              _state.onToggleEnglishSubtitles?.call();
+              OverlaySheetController.of(context).close();
+            },
+            activeThumbColor: Colors.amber,
+          ),
+          onTap: () {
+            _state.onToggleEnglishSubtitles?.call();
+            OverlaySheetController.of(context).close();
+          },
         ),
 
         if (_supportsHdrControl)

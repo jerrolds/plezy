@@ -4,6 +4,8 @@ import '../media/media_item.dart';
 import '../media/media_server_user_profile.dart';
 import '../media/media_source_info.dart';
 import '../mpv/mpv.dart';
+import '../services/scoped_player_prefs.dart';
+import '../services/settings_service.dart';
 import '../utils/subtitle_forced_semantics.dart';
 import 'playback_initialization_types.dart';
 import 'subtitle_preference.dart';
@@ -192,6 +194,8 @@ class PlaybackSubtitleResolver {
       profileSettings: profileSettings,
       metadata: metadata,
       plexMediaInfo: mediaInfo,
+      preferredAudioCodec: ScopedPlayerPrefs.resolve(ScopedPlayerPrefs.preferredAudioCodec, metadata),
+      animeMode: SettingsService.instance.read(SettingsService.animeMode),
     );
     final selectedAudio = service.selectAudioTrack(_audioTracksForSource(mediaInfo), preferredAudioTrack)?.track;
     final primaryPreference = _sourceBackedPreference(

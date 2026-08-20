@@ -54,6 +54,7 @@ class _PlaybackSettingsScreenState extends State<PlaybackSettingsScreen> {
     return SettingsBuilder(
       prefs: const [
         SettingsService.useExoPlayer,
+        SettingsService.preferredAudioCodec,
         SettingsService.matchRefreshRate,
         SettingsService.matchDynamicRange,
         SettingsService.matchContentFrameRate,
@@ -85,6 +86,7 @@ class _PlaybackSettingsScreenState extends State<PlaybackSettingsScreen> {
                 if (showDisplaySwitchDelay) _displaySwitchDelayTile(),
                 if (exoActive) _tunneledPlaybackTile(),
                 if (PlatformDetector.supportsAudioPassthrough()) _audioPassthroughTile(),
+                _preferredAudioFormatTile(),
                 _audioDownmixTile(),
                 if (downmixOn) _downmixCenterBoostTile(),
                 if (downmixOn) _downmixNormalizeTile(),
@@ -249,6 +251,12 @@ class _PlaybackSettingsScreenState extends State<PlaybackSettingsScreen> {
         subtitle: t.settings.rememberTrackSelectionsDescription,
       ),
       SettingSwitchTile(
+        pref: SettingsService.animeMode,
+        icon: Symbols.movie_rounded,
+        title: 'Anime Mode',
+        subtitle: 'Prefer Japanese audio and English subtitles when available',
+      ),
+      SettingSwitchTile(
         pref: SettingsService.followServerTrackSelections,
         icon: Symbols.dns_rounded,
         title: t.settings.followServerTrackSelections,
@@ -363,6 +371,28 @@ class _PlaybackSettingsScreenState extends State<PlaybackSettingsScreen> {
     icon: Symbols.hardware_rounded,
     title: t.settings.hardwareDecoding,
     subtitle: t.settings.hardwareDecodingDescription,
+  );
+
+  Widget _preferredAudioFormatTile() => SettingSelectionTile<String>(
+    pref: SettingsService.preferredAudioCodec,
+    icon: Symbols.graphic_eq_rounded,
+    title: 'Preferred Audio Format',
+    subtitleBuilder: (value) => switch (value) {
+      'ac3_2_0' => 'AC3 2.0 · falls back to AC3 5.1',
+      'ac3_5_1' => 'AC3 5.1 · falls back to AC3 2.0',
+      'dts' => 'DTS',
+      'eac3' => 'Dolby Digital Plus (E-AC3)',
+      'truehd' => 'Dolby TrueHD',
+      _ => 'Server Default',
+    },
+    options: const [
+      DialogOption(value: 'auto', title: 'Server Default'),
+      DialogOption(value: 'ac3_2_0', title: 'AC3 2.0'),
+      DialogOption(value: 'ac3_5_1', title: 'AC3 5.1'),
+      DialogOption(value: 'dts', title: 'DTS'),
+      DialogOption(value: 'eac3', title: 'Dolby Digital Plus (E-AC3)'),
+      DialogOption(value: 'truehd', title: 'Dolby TrueHD'),
+    ],
   );
 
   Widget _autoPipTile() => SettingSwitchTile(

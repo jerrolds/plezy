@@ -48,10 +48,19 @@ class TrackControlsState {
   final Function(int)? onSwitchVersion;
   final ValueChanged<TranscodeQualityPreset>? onSwitchQualityPreset;
   final Future<void> Function(int)? onSwitchAudioStreamId;
+  final Future<void> Function({
+    int? newMediaIndex,
+    TranscodeQualityPreset? newPreset,
+    int? newAudioStreamId,
+    PlaybackSourceSubtitleChoice? newSubtitleChoice,
+  })?
+  onPlaybackSourceChanged;
   final Future<void> Function(PlaybackSourceSubtitleChoice)? onSwitchSubtitle;
   final Function(AudioTrack)? onAudioTrackChanged;
   final Function(SubtitleTrack)? onSubtitleTrackChanged;
   final Function(SubtitleTrack)? onSecondarySubtitleTrackChanged;
+  final bool englishSubtitlesEnabled;
+  final VoidCallback? onToggleEnglishSubtitles;
   final VoidCallback? onCancelAutoHide;
   final VoidCallback? onStartAutoHide;
   final String? serverId;
@@ -111,10 +120,13 @@ class TrackControlsState {
     this.onSwitchVersion,
     this.onSwitchQualityPreset,
     this.onSwitchAudioStreamId,
+    this.onPlaybackSourceChanged,
     this.onSwitchSubtitle,
     this.onAudioTrackChanged,
     this.onSubtitleTrackChanged,
     this.onSecondarySubtitleTrackChanged,
+    this.englishSubtitlesEnabled = false,
+    this.onToggleEnglishSubtitles,
     this.onCancelAutoHide,
     this.onStartAutoHide,
     this.serverId,

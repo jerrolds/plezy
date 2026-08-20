@@ -819,6 +819,7 @@ class _PlexVideoControlsState extends State<PlexVideoControls>
   bool _subtitlesVisible = true;
   bool _confirmedSubtitlesVisible = true;
   int _subtitleVisibilityWriteGeneration = 0;
+  bool _englishSubtitlesEnabled = false;
   // Skip marker button focus node (for TV D-pad navigation)
   late final FocusNode _skipMarkerFocusNode;
   final ValueNotifier<bool> _fallbackHasFirstFrame = ValueNotifier<bool>(true);

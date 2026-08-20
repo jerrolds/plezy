@@ -57,7 +57,38 @@ extension _PlexVideoControlsTrackMethods on _PlexVideoControlsState {
     if (track.id != 'no' && !_subtitlesVisible) {
       _setSubtitleVisibility(true);
     }
+    if (_englishSubtitlesEnabled && track.language != null && track.language!.toLowerCase().startsWith('en')) {
+      // Keep the session flag in sync when the user manually lands on English.
+      _englishSubtitlesEnabled = true;
+    }
     widget.onSubtitleTrackChanged?.call(track);
+  }
+
+  void _toggleEnglishSubtitles() {
+    final next = !_englishSubtitlesEnabled;
+    _englishSubtitlesEnabled = next;
+    if (!next) {
+      setStateIfMounted(() {});
+      return;
+    }
+
+    final subtitles = widget.player.state.tracks.subtitle.where((t) => t.id != 'auto' && t.id != 'no').toList();
+    final english = subtitles.firstWhere(
+      (track) {
+        final language = track.language?.toLowerCase() ?? '';
+        final title = track.title?.toLowerCase() ?? '';
+        return language == 'en' ||
+            language.startsWith('en-') ||
+            title.contains('english');
+      },
+      orElse: () => subtitles.isNotEmpty ? subtitles.first : SubtitleTrack.off,
+    );
+
+    if (english.id != SubtitleTrack.off.id) {
+      widget.player.selectSubtitleTrack(english);
+      widget.onSubtitleTrackChanged?.call(english);
+    }
+    setStateIfMounted(() {});
   }
 
   void _setSubtitleVisibility(bool visible) {
@@ -203,12 +234,15 @@ extension _PlexVideoControlsTrackMethods on _PlexVideoControlsState {
       onSwitchVersion: versionQuality.canSwitch ? (i) => _switchVersionAndQuality(newMediaIndex: i) : null,
       onSwitchQualityPreset: versionQuality.canSwitch ? (p) => _switchVersionAndQuality(newPreset: p) : null,
       onSwitchAudioStreamId: versionQuality.canSwitch ? (id) => _switchVersionAndQuality(newAudioStreamId: id) : null,
+      onPlaybackSourceChanged: widget.onPlaybackSourceChanged,
       onSwitchSubtitle: canSwitchSourceSubtitles
           ? (choice) => _switchVersionAndQuality(newSubtitleChoice: choice)
           : null,
       onAudioTrackChanged: widget.onAudioTrackChanged,
       onSubtitleTrackChanged: _onSubtitleTrackChanged,
       onSecondarySubtitleTrackChanged: widget.onSecondarySubtitleTrackChanged,
+      englishSubtitlesEnabled: _englishSubtitlesEnabled,
+      onToggleEnglishSubtitles: _toggleEnglishSubtitles,
       onCancelAutoHide: widget.chromeController.cancelAutoHide,
       onStartAutoHide: _startHideTimer,
       serverId: widget.metadata.serverId,
