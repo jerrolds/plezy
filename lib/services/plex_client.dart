@@ -3603,12 +3603,18 @@ class PlexClient
       final carriedAudioStreamId = carriedAudioTrack == null || data.mediaInfo == null
           ? null
           : findSourceAudioTrackForIntent(carriedAudioTrack, data.mediaInfo!.audioTracks)?.id;
+      final requestedAudioTrack = _resolveRequestedAudioTrack(
+        data.mediaInfo,
+        selectedAudioStreamId: options.selectedAudioStreamId,
+        preferredAudioTrack: options.preferredAudioTrack,
+      );
 
       // Tracks consult the music preset — [qualityPreset] is video-shaped
       // (resolution/videoQuality) and is ignored for audio.
       final isTrack = options.metadata.kind == MediaKind.track;
       final audioPreset = options.audioQualityPreset ?? AudioQualityPreset.original;
-      final wantTranscode = isTrack ? !audioPreset.isOriginal : !options.qualityPreset.isOriginal;
+      final wantTranscode =
+          isTrack ? !audioPreset.isOriginal : !options.qualityPreset.isOriginal || _shouldTranscodeForAudioTrack(requestedAudioTrack);
       if (wantTranscode && options.sessionIdentifier != null && options.transcodeSessionId != null) {
         if (isTrack) {
           final result = await buildMusicTranscodeStartPath(
@@ -3637,9 +3643,7 @@ class PlexClient
           return _transcodeFallbackResult(data, result.outcome, options);
         }
 
-        final resolvedAudioId = carriedAudioTrack == null
-            ? _resolveAudioStreamId(options.selectedAudioStreamId, data.mediaInfo)
-            : carriedAudioStreamId;
+        final resolvedAudioId = _resolveAudioStreamId(options.selectedAudioStreamId, data.mediaInfo);
         final requestedSubtitleTrack = _resolveTranscodeSubtitleTrack(data.mediaInfo, options.preferredSubtitleTrack);
         final result = await buildTranscodeStartPath(
           ratingKey: options.metadata.id,
@@ -3739,6 +3743,46 @@ class PlexClient
     }
     return tracks.first.id;
   }
+
+  static MediaAudioTrack? _resolveRequestedAudioTrack(
+    MediaSourceInfo? info, {
+    required int? selectedAudioStreamId,
+    required AudioTrack? preferredAudioTrack,
+  }) {
+    if (info == null) return null;
+    if (selectedAudioStreamId != null) {
+      for (final track in info.audioTracks) {
+        if (track.id == selectedAudioStreamId) return track;
+      }
+    }
+    if (preferredAudioTrack != null) {
+      return findSourceAudioTrackForIntent(preferredAudioTrack, info.audioTracks);
+    }
+    for (final track in info.audioTracks) {
+      if (track.selected) return track;
+    }
+    return info.audioTracks.isEmpty ? null : info.audioTracks.first;
+  }
+
+  static bool _shouldTranscodeForAudioTrack(MediaAudioTrack? track) {
+    final codec = track?.codec?.toLowerCase();
+    if (codec == null || codec.isEmpty) return false;
+    return !_safeDirectPlayAudioCodecs.contains(codec);
+  }
+
+  static const Set<String> _safeDirectPlayAudioCodecs = {
+    'aac',
+    'ac3',
+    'a52',
+    'eac3',
+    'dts',
+    'mp3',
+    'flac',
+    'opus',
+    'vorbis',
+    'pcm_s16le',
+    'pcm_s24le',
+  };
 
   MediaSubtitleTrack? _selectedSubtitleTrack(MediaSourceInfo? info) {
     if (info == null) return null;

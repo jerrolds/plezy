@@ -383,6 +383,7 @@ class SettingsService extends BaseSharedPreferencesService {
     defaultValue: HdrToneMapping.compositor,
   );
   static const preferredVideoCodec = StringPref('preferred_video_codec', defaultValue: 'auto');
+  /// Stored as `auto`, `ac3_2_0`, `ac3_5_1`, `dts`, `eac3`, or `truehd`.
   static const preferredAudioCodec = StringPref('preferred_audio_codec', defaultValue: 'auto');
   static const viewMode = EnumPref<ViewMode>('view_mode', values: ViewMode.values, defaultValue: ViewMode.grid);
   static const seekTimeSmall = IntPref('seek_time_small', defaultValue: 10);
@@ -426,6 +427,7 @@ class SettingsService extends BaseSharedPreferencesService {
   static const subtitleAnchorToScreen = BoolPref('subtitle_anchor_to_screen');
   static const cleanedOldImageCache = BoolPref('cleaned_old_image_cache');
   static const rememberTrackSelections = BoolPref('remember_track_selections', defaultValue: true);
+  static const animeMode = BoolPref('anime_mode');
 
   /// Episode advance follows the server's per-episode audio/subtitle
   /// selections instead of carrying the current choice over (#1717).
@@ -984,6 +986,7 @@ class SettingsService extends BaseSharedPreferencesService {
     subtitleBackgroundColor,
     subtitleBackgroundOpacity,
     rememberTrackSelections,
+    animeMode,
     followServerTrackSelections,
     downloadOnWifiOnly,
     backgroundDownloadWarningAcknowledged,

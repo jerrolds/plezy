@@ -75,6 +75,13 @@ abstract final class ScopedPlayerPrefs {
     _decodeInt,
   );
 
+  static final preferredAudioCodec = ScopedPlayerPref<String>._(
+    'preferred_audio_codec',
+    _preferredAudioCodecScope,
+    SettingsService.preferredAudioCodec,
+    _decodeString,
+  );
+
   /// Entry cap per property; oldest entries by write time are evicted past it.
   static const int maxEntriesPerProperty = 300;
 
@@ -154,4 +161,10 @@ abstract final class ScopedPlayerPrefs {
   static int? _decodeBoxFit(Object? raw) => raw is int ? raw.clamp(0, 2) : null;
 
   static String? _decodeString(Object? raw) => raw is String ? raw : null;
+
+  static const EnumPref<PlayerSettingScope> _preferredAudioCodecScope = EnumPref<PlayerSettingScope>(
+    'preferred_audio_codec_scope',
+    values: PlayerSettingScope.values,
+    defaultValue: PlayerSettingScope.title,
+  );
 }

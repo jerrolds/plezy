@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/symbols.dart';
 
 import '../../../media/media_source_info.dart';
+import '../../../models/transcode_quality_preset.dart';
 import '../../../mpv/mpv.dart';
 import '../../../services/playback_subtitle_resolver.dart';
 import '../../../i18n/strings.g.dart';
@@ -21,8 +22,9 @@ import '../helpers/track_selection_helper.dart';
 class TrackSheet extends StatelessWidget {
   final Player player;
   final TrackControlsState trackControlsState;
+  final bool audioOnly;
 
-  const TrackSheet({super.key, required this.player, required this.trackControlsState});
+  const TrackSheet({super.key, required this.player, required this.trackControlsState, this.audioOnly = false});
 
   @override
   Widget build(BuildContext context) {
@@ -38,14 +40,9 @@ class TrackSheet extends StatelessWidget {
         );
 
         final state = trackControlsState;
-        final hasExternalSourceAudio = state.sourceAudioTracks.any((track) => track.isExternal);
-        final useSourceAudio =
-            (state.isTranscoding || hasExternalSourceAudio) &&
-            state.sourceAudioTracks.length > 1 &&
-            state.onSwitchAudioStreamId != null;
         final useSourceSubtitles = state.canUseSourceSubtitles;
-        final showAudio = useSourceAudio || playerAudioTracks.length > 1;
-        final showSubtitles = state.hasSubtitleControls(tracks);
+        final showAudio = state.sourceAudioTracks.isNotEmpty || playerAudioTracks.length > 1;
+        final showSubtitles = !audioOnly && state.hasSubtitleControls(tracks);
 
         final String title;
         final IconData icon;
@@ -72,11 +69,12 @@ class TrackSheet extends StatelessWidget {
               final supportsSecondary = player.supportsSecondarySubtitles;
 
               Widget audioColumnFor(TrackSelection sel, bool showHeader) {
-                if (useSourceAudio) {
+                if (state.sourceAudioTracks.isNotEmpty) {
                   return _SourceAudioColumn(
                     tracks: state.sourceAudioTracks,
                     selectedStreamId: state.selectedAudioStreamId,
                     onSelected: state.onSwitchAudioStreamId!,
+                    onPlaybackSourceChanged: state.onPlaybackSourceChanged,
                     showHeader: showHeader,
                   );
                 }
@@ -132,12 +130,20 @@ class _SourceAudioColumn extends StatelessWidget {
   final List<MediaAudioTrack> tracks;
   final int? selectedStreamId;
   final Future<void> Function(int) onSelected;
+  final Future<void> Function({
+    int? newMediaIndex,
+    TranscodeQualityPreset? newPreset,
+    int? newAudioStreamId,
+    PlaybackSourceSubtitleChoice? newSubtitleChoice,
+  })?
+  onPlaybackSourceChanged;
   final bool showHeader;
 
   const _SourceAudioColumn({
     required this.tracks,
     required this.selectedStreamId,
     required this.onSelected,
+    this.onPlaybackSourceChanged,
     required this.showHeader,
   });
 
@@ -157,7 +163,14 @@ class _SourceAudioColumn extends StatelessWidget {
           key: scope.keyFor(index),
           label: track.label,
           isSelected: track.id == selectedId,
-          onTap: () => scope.runExclusive(() => onSelected(track.id)),
+          onTap: () => scope.runExclusive(() async {
+            final switchSource = onPlaybackSourceChanged;
+            if (switchSource != null) {
+              await switchSource(newAudioStreamId: track.id);
+            } else {
+              await onSelected(track.id);
+            }
+          }),
         );
       },
     );

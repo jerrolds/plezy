@@ -278,7 +278,12 @@ class TrackManager {
     final realSubtitleTracks = tracks.subtitle
         .where((track) => track.id != SubtitleTrack.auto.id && track.id != SubtitleTrack.off.id)
         .toList(growable: false);
-    final service = TrackSelectionService(metadata: metadata, plexMediaInfo: mediaInfo);
+    final service = TrackSelectionService(
+      metadata: metadata,
+      plexMediaInfo: mediaInfo,
+      preferredAudioCodec: ScopedPlayerPrefs.resolve(ScopedPlayerPrefs.preferredAudioCodec, metadata),
+      animeMode: SettingsService.instance.read(SettingsService.animeMode),
+    );
 
     // A burned-in primary is already in the picture, so no native track is ever coming for it.
     // Waiting for one holds up audio and rate setup for the five-second fallback and then logs a
@@ -378,6 +383,8 @@ class TrackManager {
         profileSettings: profileSettings,
         metadata: metadata,
         plexMediaInfo: mediaInfo,
+        preferredAudioCodec: ScopedPlayerPrefs.resolve(ScopedPlayerPrefs.preferredAudioCodec, metadata),
+        animeMode: SettingsService.instance.read(SettingsService.animeMode),
       );
 
       return await trackService.selectAndApplyTracks(

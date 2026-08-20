@@ -468,6 +468,8 @@ class VideoPlayerScreenState extends State<VideoPlayerScreen> with WidgetsBindin
   String? _playerInitializationError;
   Future<void>? _playerInitializationOperation;
   int _playerInitializationGeneration = 0;
+  bool _retriedUnsupportedAudioSignal = false;
+  bool _retryWithPcmDecode = false;
   late MediaItem _currentMetadata;
   MediaItem? _nextEpisode;
   MediaItem? _previousEpisode;
@@ -1249,6 +1251,21 @@ class VideoPlayerScreenState extends State<VideoPlayerScreen> with WidgetsBindin
     unawaited(_startPlayerInitialization(replaceCurrent: true));
   }
 
+  bool _isUnsupportedAudioSignalError(Object error) {
+    final text = error.toString().toLowerCase();
+    return text.contains('unsupported audio signal') || text.contains('unsupported audio');
+  }
+
+  Future<void> _retryInitializationWithTranscodeFallback(String message) async {
+    if (_retriedUnsupportedAudioSignal) return;
+    _retriedUnsupportedAudioSignal = true;
+    _retryWithPcmDecode = true;
+    if (mounted) {
+      showErrorSnackBar(context, '$message, retrying with Plezy audio decode instead, please wait...');
+    }
+    _retryPlayerInitialization();
+  }
+
   bool _isPlayerInitializationCurrent(int generation) {
     return mounted && generation == _playerInitializationGeneration;
   }
@@ -1297,6 +1314,8 @@ class VideoPlayerScreenState extends State<VideoPlayerScreen> with WidgetsBindin
       setState(() {
         _playerInitializationError = null;
         _isPlayerInitialized = false;
+        _retriedUnsupportedAudioSignal = false;
+        _retryWithPcmDecode = false;
       });
 
       if (replaceCurrent) {
@@ -1548,7 +1567,9 @@ class VideoPlayerScreenState extends State<VideoPlayerScreen> with WidgetsBindin
       // native sample-buffer renderer handles AC3/EAC3, including JOC metadata;
       // never macOS — see PlatformDetector.supportsAudioPassthrough).
       if (PlatformDetector.supportsAudioPassthrough()) {
-        await currentPlayer.setAudioPassthrough(settingsService.read(SettingsService.audioPassthrough));
+        await currentPlayer.setAudioPassthrough(
+          settingsService.read(SettingsService.audioPassthrough) && !_retryWithPcmDecode,
+        );
       }
 
       // Set before hdr-enabled so the first image description is already built

@@ -220,6 +220,32 @@ class TrackChapterControls extends StatelessWidget {
           buttonIndex++;
         }
 
+        if (player.state.tracks.audio.where((t) => t.id != 'auto' && t.id != 'no').isNotEmpty) {
+          final currentIndex = buttonIndex;
+          buttons.add(
+            _buildTrackButton(
+              buttonIndex: currentIndex,
+              icon: Symbols.audiotrack_rounded,
+              tooltip: t.videoControls.audioLabel,
+              semanticLabel: t.videoControls.audioLabel,
+              buttons: buttons,
+              onPressed: () {
+                state.onCancelAutoHide?.call();
+                OverlaySheetController.of(context)
+                    .show(
+                      builder: (_) => TrackSheet(
+                        player: player,
+                        trackControlsState: state,
+                        audioOnly: true,
+                      ),
+                    )
+                    .whenComplete(() => state.onStartAutoHide?.call());
+              },
+            ),
+          );
+          buttonIndex++;
+        }
+
         if (chapters.isNotEmpty && !hideChaptersAndQueue) {
           final currentIndex = buttonIndex;
           buttons.add(

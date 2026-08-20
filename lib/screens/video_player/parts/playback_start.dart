@@ -311,6 +311,10 @@ extension _VideoPlayerPlaybackStartMethods on VideoPlayerScreenState {
     } on PlaybackException catch (e, st) {
       appLogger.w('Playback initialization failed', error: e, stackTrace: st);
       if (attempt.isCurrent && mounted) {
+        if (_isUnsupportedAudioSignalError(e)) {
+          await _retryInitializationWithTranscodeFallback(e.message);
+          return;
+        }
         if (!primaryMediaOpened) {
           _hasFatalPlaybackError = true;
         }
@@ -320,6 +324,10 @@ extension _VideoPlayerPlaybackStartMethods on VideoPlayerScreenState {
     } catch (e, st) {
       appLogger.e('Failed to start playback', error: e, stackTrace: st);
       if (attempt.isCurrent && mounted) {
+        if (_isUnsupportedAudioSignalError(e)) {
+          await _retryInitializationWithTranscodeFallback(e.toString());
+          return;
+        }
         if (!primaryMediaOpened) {
           _hasFatalPlaybackError = true;
         }

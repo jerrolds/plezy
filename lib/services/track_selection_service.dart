@@ -617,9 +617,9 @@ bool _audioCodecsMatch(String? mpvCodec, String? plexCodec) {
 
   // Common audio codec aliases
   const aliases = {
-    'ac3': ['ac3', 'a52', 'eac3', 'dolby digital'],
+    'ac3': ['ac3', 'a52', 'dolby digital'],
     'a52': ['ac3', 'a52'],
-    'eac3': ['eac3', 'e-ac-3', 'dolby digital plus', 'ac3'],
+    'eac3': ['eac3', 'e-ac-3', 'dolby digital plus'],
     'dts': ['dts', 'dca'],
     'dca': ['dts', 'dca'],
     'aac': ['aac', 'mp4a'],
@@ -661,6 +661,40 @@ bool _titlesMatch(String? mpvTitle, String? plexTitle, String? plexDisplayTitle)
 
 int _mediaTrackStreamIndex(int id, int? index) => index ?? id;
 
+AudioTrack? _findPreferredAudioCodecTrack(List<AudioTrack> availableTracks, String preferredAudioCodec) {
+  if (preferredAudioCodec == 'auto') return null;
+
+  final normalized = preferredAudioCodec.toLowerCase();
+  for (final track in availableTracks) {
+    final label = _audioTrackSearchText(track);
+    if (label.isEmpty) continue;
+
+    if (switch (normalized) {
+      'ac3_2_0' => label.contains('ac3 2.0') || label.contains('dolby digital 2.0') || label.contains('2.0'),
+      'ac3_5_1' => label.contains('ac3 5.1') || label.contains('dolby digital 5.1') || label.contains('5.1'),
+      'dts' => label.contains('dts'),
+      'eac3' => label.contains('e-ac-3') || label.contains('eac3') || label.contains('dolby digital plus'),
+      'truehd' => label.contains('truehd'),
+      _ => false,
+    }) {
+      return track;
+    }
+  }
+  return null;
+}
+
+String _audioTrackSearchText(AudioTrack track) {
+  final parts = <String>[
+    track.title ?? '',
+    track.codec ?? '',
+  ];
+  final channels = track.channels;
+  if (channels != null) {
+    parts.add(channels == 2 ? '2.0' : channels == 6 ? '5.1' : '$channels');
+  }
+  return parts.join(' ').toLowerCase();
+}
+
 /// Priority levels for track selection
 enum TrackSelectionPriority {
   navigation, // Priority 1: User's manual selection from previous episode
@@ -686,8 +720,17 @@ class TrackSelectionService {
   final MediaServerUserProfile? profileSettings;
   final MediaItem metadata;
   final MediaSourceInfo? plexMediaInfo;
+  final String preferredAudioCodec;
+  final bool animeMode;
 
-  TrackSelectionService({this.player, this.profileSettings, required this.metadata, this.plexMediaInfo});
+  TrackSelectionService({
+    this.player,
+    this.profileSettings,
+    required this.metadata,
+    this.plexMediaInfo,
+    this.preferredAudioCodec = 'auto',
+    this.animeMode = false,
+  });
 
   /// Build list of preferred languages from a user profile
   List<String> _buildPreferredLanguages(MediaServerUserProfile profile, {required bool isAudio}) {
@@ -819,6 +862,24 @@ class TrackSelectionService {
     return preferredLanguages.any((language) => languageMatches(selectedAudioTrack.language, language));
   }
 
+  bool _isJapaneseAudio(AudioTrack? track) {
+    final language = track?.language;
+    if (language == null || language.isEmpty) return false;
+    return languageMatches(language, 'ja') || languageMatches(language, 'jpn') || languageMatches(language, 'japanese');
+  }
+
+  SubtitleTrack? _findEnglishSubtitle(List<SubtitleTrack> availableTracks, {required bool forcedOnly}) {
+    SubtitleTrack? fallback;
+    for (final track in availableTracks) {
+      if (track.id == SubtitleTrack.off.id) continue;
+      if (!languageMatches(track.language, 'en') && !languageMatches(track.language, 'eng')) continue;
+      if (forcedOnly && !track.effectiveForced) continue;
+      if (track.effectiveForced) return track;
+      fallback ??= track;
+    }
+    return fallback;
+  }
+
   TrackSelectionResult<SubtitleTrack>? _selectSubtitleTrackByProfile(
     List<SubtitleTrack> availableTracks,
     AudioTrack? selectedAudioTrack,
@@ -826,6 +887,13 @@ class TrackSelectionService {
     final profile = profileSettings;
     final mode = profile?.subtitleMode;
     if (profile == null || mode == null || mode == SubtitlePlaybackMode.defaultMode) return null;
+
+    if (animeMode && _isJapaneseAudio(selectedAudioTrack)) {
+      final englishForced = _findEnglishSubtitle(availableTracks, forcedOnly: true);
+      if (englishForced != null) {
+        return TrackSelectionResult(englishForced, TrackSelectionPriority.profile);
+      }
+    }
 
     SubtitleTrack? selected;
     switch (mode) {
@@ -979,9 +1047,8 @@ class TrackSelectionService {
   /// Select the best audio track based on priority:
   /// Priority 1: Preferred track from navigation
   /// Priority 2: Server-selected track from media info
-  /// Priority 3: Per-media language preference
-  /// Priority 4: User profile preferences
-  /// Priority 5: Default or first track
+  /// Priority 3: User-selected audio format preference
+  /// Priority 4: Default or first track
   TrackSelectionResult<AudioTrack>? selectAudioTrack(
     List<AudioTrack> availableTracks,
     AudioTrack? preferredAudioTrack,
@@ -1052,26 +1119,21 @@ class TrackSelectionService {
       }
     }
 
-    // Priority 3: Try per-media language preference
-    if (metadata.audioLanguage != null) {
-      final matchedTrack = availableTracks.firstWhere(
-        (track) => languageMatches(track.language, metadata.audioLanguage),
-        orElse: () => availableTracks.first,
-      );
-      if (languageMatches(matchedTrack.language, metadata.audioLanguage)) {
-        return TrackSelectionResult(matchedTrack, TrackSelectionPriority.perMedia);
+    // Priority 3: Try the user-selected audio format preference.
+    trackToSelect = _findPreferredAudioCodecTrack(availableTracks, preferredAudioCodec);
+    if (trackToSelect != null) {
+      return TrackSelectionResult(trackToSelect, TrackSelectionPriority.profile);
+    }
+
+    if (animeMode) {
+      for (final track in availableTracks) {
+        if (_isJapaneseAudio(track)) {
+          return TrackSelectionResult(track, TrackSelectionPriority.profile);
+        }
       }
     }
 
-    // Priority 4: Try user profile preferences
-    if (profileSettings != null) {
-      trackToSelect = findAudioTrackByProfile(availableTracks, profileSettings!);
-      if (trackToSelect != null) {
-        return TrackSelectionResult(trackToSelect, TrackSelectionPriority.profile);
-      }
-    }
-
-    // Priority 5: Use default or first track
+    // Priority 4: Use default or first track
     trackToSelect = availableTracks.firstWhere((t) => t.isDefault, orElse: () => availableTracks.first);
     return TrackSelectionResult(trackToSelect, TrackSelectionPriority.defaultTrack);
   }
